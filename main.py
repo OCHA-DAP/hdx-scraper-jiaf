@@ -1,105 +1,76 @@
-import json
-from urllib import request, error
-from hdx.utilities.saver import save_json
+import pandas as pd
 
-def fetch_data(query_url, limit=1000):
+def set_header(df):
     """
-    Fetch data from the provided base_url with pagination support.
+    Set row beginning with 'Admin 0' as header and drop any rows above
+    """
+    header_row = df[df[0].astype(str).str.startswith("Admin 0")]
+    header_index = header_row.index[0]
+    df = df.iloc[header_index:].reset_index(drop=True)
+    df.columns = df.iloc[0]
+    return df.iloc[1:].reset_index(drop=True)
+
+def set_merge_key(df):
+    """
+    Set 'Admin 3 P-Code' as merge key if not empty, otherwise use 'Admin 2 P-Code'
+    """
+    df['merge_key'] = df.apply(
+        lambda row: row['Admin 3 P-Code'] if pd.notnull(row.get('Admin 3 P-Code')) and str(
+            row.get('Admin 3 P-Code')).strip() != ""
+        else row.get('Admin 2 P-Code'),
+        axis=1
+    )
+    return df
+
+def process_data(input_file, output_file):
+    """
+    Process data to set header and merge sheets, matching by admin3 p-code
+    if avail, otherwise admin2 p-code
 
     Args:
-    - base_url (str): The base URL endpoint to fetch data from.
-    - limit (int): The number of records to fetch per request.
+        input_file (str): path to excel file
+        output_file (str): path to saved json file
 
     Returns:
-    - list: A list of fetched results.
+        merged_df (DataFrame): final merged dataframe
     """
+    # Process the first sheet (PiN)
+    df1 = pd.read_excel(input_file, sheet_name=0, header=None)
+    df1 = set_header(df1)
 
-    idx = 0
-    results = []
+    # Keep columns ISO3, Population, Final PiN, and any column beginning with "Admin"
+    cols_to_keep = [col for col in df1.columns if
+                    (str(col).startswith("Admin")) or col in ["ISO3", "Population", "Final PiN"]]
+    df1 = df1[cols_to_keep]
 
-    while True:
-        offset = idx * limit
-        url = f"{query_url}&offset={offset}&limit={limit}"
-        print(url)
-        with request.urlopen(url) as response:
-            print(f"Getting results {offset} to {offset+limit-1}")
-            json_response = json.loads(response.read())
+    # Calculate percentage of pin
+    df1['Population'] = pd.to_numeric(df1['Population'], errors='coerce')
+    df1['Final PiN'] = pd.to_numeric(df1['Final PiN'], errors='coerce')
+    df1['PiN_percentage'] = (df1['Final PiN'] / df1['Population']).where(df1['Population'] != 0)
 
-            results.extend(json_response['data'])
+    # Create the merge key on the pin sheet
+    df1 = set_merge_key(df1)
 
-            # If the returned results are less than the limit,
-            # it's the last page
-            if len(json_response['data']) < limit:
-                break
+    # Process the second sheet (Severity)
+    df2 = pd.read_excel(input_file, sheet_name=1, header=None)
+    df2 = set_header(df2)
+    df2 = set_merge_key(df2)
 
-        idx += 1
+    # Keep "Final Severity" column from the severity sheet
+    df2 = df2[['merge_key', 'Final Severity']]
 
-    return results
+    # Merge sheets using merge_key
+    merged_df = pd.merge(df1, df2, on='merge_key', how='left')
 
+    # Create json output
+    json_data = merged_df.to_json(orient='records', indent=4, force_ascii=False)
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(json_data)
 
-def download_geojson(geojson_url):
-    """
-    Download GeoJSON data from the provided URL.
-
-    Args:
-    - geojson_url (str): The URL to download the GeoJSON data from.
-
-    Returns:
-    - dict: The GeoJSON data as a dictionary.
-    """
-    try:
-        with request.urlopen(geojson_url) as response:
-            return json.loads(response.read())
-    except error.URLError as e:
-        print(f"URL error: {e.reason}")
-    except error.HTTPError as e:
-        print(f"HTTP error occurred: {e.code} - {e.reason}")
-    except json.JSONDecodeError as e:
-        print(f"Failed to parse JSON data: {e.msg}")
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-
-    return None
-
-def save_geojson(geojson, filename):
-    """
-    Save the GeoJSON data to a file.
-
-    Args:
-    - geojson (dict): The GeoJSON data.
-    - filename (str): The filename to save the data to.
-    """
-    try:
-        save_json(geojson, filename)
-    except Exception as e:
-        print(f"Error: {e}")
-
-def get_country_code(country_list):
-    return [country['code'] for country in country_list]
+    return merged_df
 
 
-
-APP_IDENTIFIER = "aGFwaS1kYXNoYm9hcmQ6ZXJpa2Eud2VpQHVuLm9yZw=="
-BASE_URL = "https://hapi.humdata.org/api/v1/"
-LIMIT = 1000
-
-if __name__ == "__main__":
-    country_query_url = f"{BASE_URL}metadata/location?output_format=json&app_identifier={APP_IDENTIFIER}"
-    country_data = fetch_data(country_query_url, LIMIT)
-    #country_list = get_country_code(country_data)
-    #HAPI locations endpoint returns 249 countries which takes too long for the script to complete
-    #just getting geojson for the subset of countries used in the dashboard
-    country_list = ['AFG', 'BFA', 'CMR', 'CAF', 'TCD', 'COL', 'COD', 'SLV', 'ETH', 'GTM', 'HTI', 'HND', 'MLI', 'MOZ', 'MMR', 'NER', 'NGA', 'PSE', 'SOM', 'SSD', 'SDN', 'SYR', 'UKR', 'VEN', 'YEM']
-
-    for code in country_list:
-        print(f"Getting data for {code}")
-        geojson_url = f"https://apps.itos.uga.edu/codv2api/api/v1/themes/cod-ab/locations/{code}/versions/current/geoJSON/1"
-        geojson_data = download_geojson(geojson_url)
-
-        if geojson_data:
-            save_geojson(geojson_data, f"geojson/itos-{code}.geojson")
-            print(f"GeoJSON data saved for country code {code}")
-        else:
-            print(f"Failed to download GeoJSON data for country code {code}.")
-
-
+if __name__ == '__main__':
+    input_path = 'input/GLOBAL-JIAF-DATA 1.04.2025.xlsx'
+    output_path = 'output/output.json'
+    result_df = process_data(input_path, output_path)
