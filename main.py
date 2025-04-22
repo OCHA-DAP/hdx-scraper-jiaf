@@ -40,12 +40,32 @@ def process_data(input_file, output_file):
 
     # Keep columns ISO3, Population, Final PiN, and any column beginning with "Admin"
     cols_to_keep = [col for col in df1.columns if
-                    (str(col).startswith("Admin")) or col in ["ISO3", "Population", "Final PiN"]]
+                    (str(col).startswith("Admin")) or col in [
+                        "ISO3",
+                        "Population",
+                        "CCCM",
+                        "Education",
+                        "Nutrition",
+                        "Food Security",
+                        "Health",
+                        "Protection",
+                        "Shelter",
+                        "WASH",
+                        "General Protection",
+                        "Child Protection",
+                        "GBV",
+                        "Mine Action",
+                        "HLP",
+                        "Final PiN"
+                    ]]
     df1 = df1[cols_to_keep]
 
+    # convert cols to numeric
+    exclude_mask = df1.columns.str.startswith("Admin") | (df1.columns == "ISO3")
+    to_numeric_cols = df1.columns[~exclude_mask]
+    df1[to_numeric_cols] = df1[to_numeric_cols].apply(pd.to_numeric, errors="coerce")
+
     # Calculate percentage of pin
-    df1['Population'] = pd.to_numeric(df1['Population'], errors='coerce')
-    df1['Final PiN'] = pd.to_numeric(df1['Final PiN'], errors='coerce')
     df1['PiN_percentage'] = (df1['Final PiN'] / df1['Population']).where(df1['Population'] != 0)
 
     # Create the merge key on the pin sheet
