@@ -92,5 +92,5 @@ def process_data(input_file, output_file):
 
 if __name__ == '__main__':
     input_path = 'input/GLOBAL-JIAF-DATA 1.04.2025.xlsx'
-    output_path = 'output/output.json'
+    output_path = 'output/jiaf.json'
     result_df = process_data(input_path, output_path)
