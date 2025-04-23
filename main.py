@@ -1,4 +1,5 @@
 import json
+import math
 import pandas as pd
 
 def set_header(df):
@@ -80,8 +81,18 @@ def process_data(input_file, output_file):
     merged_df = pd.merge(df1, df2, on='merge_key', how='left')
     merged_df = merged_df.where(pd.notnull(merged_df), None)
     records = merged_df.to_dict(orient='records')
+    # for rec in records:
+    #     rec['sectors'] = {s: rec.pop(s, None) for s in sectors}
     for rec in records:
-        rec['sectors'] = {s: rec.pop(s, None) for s in sectors}
+        nested = {}
+        for s in sectors:
+            val = rec.pop(s, None)
+            # if it’s a float NaN, switch to None
+            if isinstance(val, float) and math.isnan(val):
+                nested[s] = None
+            else:
+                nested[s] = val
+        rec['sectors'] = nested
 
     # Create json output
     with open(output_file, 'w', encoding='utf-8') as f:
