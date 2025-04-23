@@ -2,6 +2,35 @@ import json
 import numpy as np
 import pandas as pd
 
+SECTOR_LIST = ["CCCM", "Education", "Nutrition", "Food Security",
+               "Health", "Protection", "Shelter", "WASH",
+               "General Protection", "Child Protection",
+               "GBV", "Mine Action", "HLP"]
+
+REGION_MAP = {
+    "AFG": "ROAP",
+    "BFA": "ROWCA",
+    "CAF": "ROWCA",
+    "TCD": "ROWCA",
+    "COL": "ROLAC",
+    "COD": "ROWCA",
+    "SLV": "ROLAC",
+    "GTM": "ROLAC",
+    "HTI": "ROLAC",
+    "HND": "ROLAC",
+    "MLI": "ROWCA",
+    "MOZ": "ROSEA",
+    "MMR": "ROAP",
+    "NGA": "ROWCA",
+    "SOM": "ROSEA",
+    "SSD": "ROSEA",
+    "SDN": "ROSEA",
+    "SYR": "ROMENA",
+    "UKR": "ROCCA",
+    "VEN": "ROLAC",
+    "YEM": "ROMENA"
+}
+
 def set_header(df):
     """
     Set row beginning with 'Admin 0' as header and drop any rows above
@@ -40,24 +69,22 @@ def process_data(input_file, output_file):
     df1 = pd.read_excel(input_file, sheet_name=0, header=None)
     df1 = set_header(df1)
 
-    # List of sectors
-    sectors = ["CCCM", "Education", "Nutrition", "Food Security",
-               "Health", "Protection", "Shelter", "WASH",
-               "General Protection", "Child Protection",
-               "GBV", "Mine Action", "HLP"]
+    # 2) Insert region_code column
+    df1["Region"] = df1["ISO3"].map(REGION_MAP)
+    df1["Region"] = df1["Region"].fillna("Unknown")
 
     # Keep columns ISO3, Population, Final PiN, and any column beginning with "Admin"
-    base_cols = ["ISO3", "Population", "Final PiN"]
+    base_cols = ["ISO3", "Region", "Population", "Final PiN"]
     cols_to_keep = [
         col
         for col in df1.columns
         if str(col).startswith("Admin")
-           or col in (base_cols + sectors)
+           or col in (base_cols + SECTOR_LIST)
     ]
     df1 = df1[cols_to_keep]
 
     # Convert cols to numeric
-    numeric_cols = ["Population", "Final PiN"] + sectors
+    numeric_cols = ["Population", "Final PiN"] + SECTOR_LIST
     df1[numeric_cols] = df1[numeric_cols].apply(
         pd.to_numeric,
         errors="coerce"
@@ -79,11 +106,10 @@ def process_data(input_file, output_file):
 
     # Merge sheets using merge_key
     merged_df = pd.merge(df1, df2, on='merge_key', how='left')
-    #merged_df = merged_df.where(pd.notnull(merged_df), None)
     merged_df = merged_df.replace({np.nan: None})
     records = merged_df.to_dict(orient='records')
     for rec in records:
-        rec['sectors'] = {s: rec.pop(s, None) for s in sectors}
+        rec['sectors'] = {s: rec.pop(s, None) for s in SECTOR_LIST}
 
     # Create json output
     with open(output_file, 'w', encoding='utf-8') as f:
