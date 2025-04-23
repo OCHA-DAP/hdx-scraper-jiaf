@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 
 def set_header(df):
@@ -38,32 +39,28 @@ def process_data(input_file, output_file):
     df1 = pd.read_excel(input_file, sheet_name=0, header=None)
     df1 = set_header(df1)
 
+    # List of sectors
+    sectors = ["CCCM", "Education", "Nutrition", "Food Security",
+               "Health", "Protection", "Shelter", "WASH",
+               "General Protection", "Child Protection",
+               "GBV", "Mine Action", "HLP"]
+
     # Keep columns ISO3, Population, Final PiN, and any column beginning with "Admin"
-    cols_to_keep = [col for col in df1.columns if
-                    (str(col).startswith("Admin")) or col in [
-                        "ISO3",
-                        "Population",
-                        "CCCM",
-                        "Education",
-                        "Nutrition",
-                        "Food Security",
-                        "Health",
-                        "Protection",
-                        "Shelter",
-                        "WASH",
-                        "General Protection",
-                        "Child Protection",
-                        "GBV",
-                        "Mine Action",
-                        "HLP",
-                        "Final PiN"
-                    ]]
+    base_cols = ["ISO3", "Population", "Final PiN"]
+    cols_to_keep = [
+        col
+        for col in df1.columns
+        if str(col).startswith("Admin")
+           or col in (base_cols + sectors)
+    ]
     df1 = df1[cols_to_keep]
 
-    # convert cols to numeric
-    exclude_mask = df1.columns.str.startswith("Admin") | (df1.columns == "ISO3")
-    to_numeric_cols = df1.columns[~exclude_mask]
-    df1[to_numeric_cols] = df1[to_numeric_cols].apply(pd.to_numeric, errors="coerce")
+    # Convert cols to numeric
+    numeric_cols = ["Population", "Final PiN"] + sectors
+    df1[numeric_cols] = df1[numeric_cols].apply(
+        pd.to_numeric,
+        errors="coerce"
+    )
 
     # Calculate percentage of pin
     df1['PiN_percentage'] = (df1['Final PiN'] / df1['Population']).where(df1['Population'] != 0)
@@ -81,11 +78,14 @@ def process_data(input_file, output_file):
 
     # Merge sheets using merge_key
     merged_df = pd.merge(df1, df2, on='merge_key', how='left')
+    merged_df = merged_df.where(pd.notnull(merged_df), None)
+    records = merged_df.to_dict(orient='records')
+    for rec in records:
+        rec['sectors'] = {s: rec.pop(s, None) for s in sectors}
 
     # Create json output
-    json_data = merged_df.to_json(orient='records', indent=4, force_ascii=False)
     with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(json_data)
+        json.dump(records, f, indent=4, ensure_ascii=False)
 
     return merged_df
 
