@@ -102,14 +102,33 @@ def process_data(input_file, output_file):
     df2 = set_merge_key(df2)
 
     # Keep "Final Severity" column from the severity sheet
-    df2 = df2[['merge_key', 'Final Severity']]
+    df2 = df2[['merge_key', 'Final Severity'] + SECTOR_LIST]
 
     # Merge sheets using merge_key
-    merged_df = pd.merge(df1, df2, on='merge_key', how='left')
+    merged_df = pd.merge(
+        df1,
+        df2,
+        on='merge_key',
+        how='left',
+        suffixes=('_pin', '_severity')
+    )
+
+    def make_sector_dict(row):
+        return {
+            s: {
+                'pin': None if pd.isna(row.get(f'{s}_pin')) else row[f'{s}_pin'],
+                'severity': None if pd.isna(row.get(f'{s}_severity')) else row[f'{s}_severity']
+            }
+            for s in SECTOR_LIST
+        }
+
+    merged_df['sectors'] = merged_df.apply(make_sector_dict, axis=1)
+
+    drop_cols = [f'{s}_pin' for s in SECTOR_LIST] + [f'{s}_severity' for s in SECTOR_LIST]
+    merged_df = merged_df.drop(columns=drop_cols)
+
     merged_df = merged_df.replace({np.nan: None})
     records = merged_df.to_dict(orient='records')
-    for rec in records:
-        rec['sectors'] = {s: rec.pop(s, None) for s in SECTOR_LIST}
 
     # Create json output
     with open(output_file, 'w', encoding='utf-8') as f:
@@ -120,5 +139,5 @@ def process_data(input_file, output_file):
 
 if __name__ == '__main__':
     input_path = 'input/GLOBAL-JIAF-DATA 1.04.2025.xlsx'
-    output_path = 'output/jiaf.json'
+    output_path = 'output/jiaf2.json'
     result_df = process_data(input_path, output_path)
